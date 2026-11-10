@@ -1,110 +1,49 @@
 package com.memobell.app;
 
 import android.Manifest;
-import android.app.Activity;
-import android.app.AlarmManager;
-import android.app.DatePickerDialog;
-import android.app.PendingIntent;
-import android.app.TimePickerDialog;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
+import android.app.*;
+import android.content.*;
 import android.content.pm.PackageManager;
-import android.os.Build;
-import android.os.Bundle;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import java.text.DateFormat;
-import java.util.Calendar;
+import android.os.*;
+import android.speech.RecognizerIntent;
+import android.view.*;
+import android.widget.*;
+import org.json.*;
+import java.text.*;
+import java.util.*;
 
 public class MainActivity extends Activity {
-    private LinearLayout remindersBox;
-    private EditText reminderInput;
-    private SharedPreferences prefs;
-    private int nextId;
-
-    @Override public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        prefs = getSharedPreferences("memobell", MODE_PRIVATE);
-        nextId = prefs.getInt("next_id", 1);
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 41);
-        buildScreen();
-        renderReminders();
-    }
-
-    private void buildScreen() {
-        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(24, 28, 24, 20); root.setBackgroundColor(0xFFF7F5FF);
-        TextView title = new TextView(this); title.setText("MemoBell"); title.setTextSize(30); title.setTextColor(0xFF39256B); title.setGravity(Gravity.CENTER); title.setPadding(0, 12, 0, 4); root.addView(title);
-        TextView subtitle = new TextView(this); subtitle.setText("Never miss what matters."); subtitle.setTextSize(15); subtitle.setTextColor(0xFF625A70); subtitle.setGravity(Gravity.CENTER); subtitle.setPadding(0, 0, 0, 24); root.addView(subtitle);
-        reminderInput = new EditText(this); reminderInput.setSingleLine(true); reminderInput.setHint("What do you need to remember?"); root.addView(reminderInput, new LinearLayout.LayoutParams(-1, -2));
-        Button add = new Button(this); add.setText("Choose date & time"); add.setOnClickListener(v -> chooseDateTime()); root.addView(add);
-        TextView heading = new TextView(this); heading.setText("YOUR REMINDERS"); heading.setTextSize(13); heading.setTextColor(0xFF625A70); heading.setPadding(0, 28, 0, 12); root.addView(heading);
-        remindersBox = new LinearLayout(this); remindersBox.setOrientation(LinearLayout.VERTICAL); root.addView(remindersBox);
-        setContentView(root);
-    }
-
-    private void chooseDateTime() {
-        String text = reminderInput.getText().toString().trim();
-        if (text.isEmpty()) { reminderInput.setError("Enter a reminder first"); return; }
-        Calendar now = Calendar.getInstance();
-        new DatePickerDialog(this, (view, year, month, day) -> {
-            Calendar selected = Calendar.getInstance(); selected.set(year, month, day);
-            new TimePickerDialog(this, (timeView, hour, minute) -> {
-                selected.set(Calendar.HOUR_OF_DAY, hour); selected.set(Calendar.MINUTE, minute); selected.set(Calendar.SECOND, 0); selected.set(Calendar.MILLISECOND, 0);
-                if (selected.getTimeInMillis() <= System.currentTimeMillis()) { Toast.makeText(this, "Please choose a future time", Toast.LENGTH_LONG).show(); return; }
-                saveAndSchedule(text, selected);
-            }, now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), false).show();
-        }, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show();
-    }
-
-    private void saveAndSchedule(String text, Calendar when) {
-        int id = nextId++;
-        prefs.edit().putInt("next_id", nextId).apply();
-        try {
-            JSONArray list = new JSONArray(prefs.getString("items", "[]"));
-            JSONObject item = new JSONObject(); item.put("id", id); item.put("title", text); item.put("when", when.getTimeInMillis()); list.put(item);
-            prefs.edit().putString("items", list.toString()).apply();
-        } catch (Exception ignored) { }
-        Intent intent = new Intent(this, ReminderReceiver.class); intent.putExtra("title", text); intent.putExtra("id", id);
-        PendingIntent pending = PendingIntent.getBroadcast(this, id, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        AlarmManager alarms = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when.getTimeInMillis(), pending);
-        reminderInput.setText(""); renderReminders();
-        Toast.makeText(this, "Reminder saved", Toast.LENGTH_SHORT).show();
-    }
-
-    private void renderReminders() {
-        remindersBox.removeAllViews();
-        try {
-            JSONArray list = new JSONArray(prefs.getString("items", "[]"));
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject item = list.getJSONObject(i); int id = item.getInt("id"); String name = item.getString("title"); long time = item.getLong("when");
-                LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.VERTICAL); row.setPadding(16, 12, 16, 12); row.setBackgroundColor(0xFFFFFFFF);
-                TextView nameView = new TextView(this); nameView.setText(name); nameView.setTextSize(17); nameView.setTextColor(0xFF292333); row.addView(nameView);
-                TextView dateView = new TextView(this); dateView.setText(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(time)); dateView.setTextSize(13); dateView.setTextColor(0xFF6D6678); row.addView(dateView);
-                Button delete = new Button(this); delete.setText("Delete"); delete.setOnClickListener(v -> deleteReminder(id)); row.addView(delete);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = 12; remindersBox.addView(row, lp);
-            }
-            if (list.length() == 0) { TextView empty = new TextView(this); empty.setText("No reminders yet. Add your first one above."); empty.setTextColor(0xFF6D6678); remindersBox.addView(empty); }
-        } catch (Exception ignored) { }
-    }
-
-    private void deleteReminder(int id) {
-        try {
-            JSONArray old = new JSONArray(prefs.getString("items", "[]")); JSONArray fresh = new JSONArray();
-            for (int i = 0; i < old.length(); i++) if (old.getJSONObject(i).getInt("id") != id) fresh.put(old.getJSONObject(i));
-            prefs.edit().putString("items", fresh.toString()).apply();
-            Intent intent = new Intent(this, ReminderReceiver.class); PendingIntent pending = PendingIntent.getBroadcast(this, id, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            ((AlarmManager)getSystemService(ALARM_SERVICE)).cancel(pending);
-        } catch (Exception ignored) { }
-        renderReminders();
-    }
+  static final String PREF="memobell_data", KEY="notes";
+  LinearLayout list; EditText input; TextView dateLabel,timeLabel,repeatLabel;
+  Calendar chosen=Calendar.getInstance(); long alarmTime=0; boolean daily=false,habit=false; int challenge=0;
+  int ink=0xFF263B78;
+  TextView label(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(ink);return t;}
+  Button btn(String s){Button b=new Button(this);b.setText(s);return b;}
+  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(0xFFF8F7FF);channel();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},10);screen();render();}
+  void channel(){if(Build.VERSION.SDK_INT>=26)getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel("reminders","MemoBell reminders",NotificationManager.IMPORTANCE_HIGH));}
+  void screen(){
+    ScrollView sc=new ScrollView(this);LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(22,20,22,28);root.setBackgroundColor(0xFFF8F7FF);sc.addView(root);
+    LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);TextView title=label("MemoBell",30);title.setTypeface(null,1);top.addView(title,new LinearLayout.LayoutParams(0,-2,1));Button menu=btn("⋮");top.addView(menu);menu.setOnClickListener(v->menu(v));root.addView(top);root.addView(label("Plan  •  Remind  •  Achieve",14));
+    dateLabel=label("YOUR NOTES · "+DateFormat.getDateInstance(DateFormat.FULL).format(new Date()),15);dateLabel.setPadding(0,20,0,10);root.addView(dateLabel);
+    LinearLayout actions=new LinearLayout(this);Button date=btn("＋ Add date"),voice=btn("🎙 Voice");actions.addView(date,new LinearLayout.LayoutParams(0,-2,1));actions.addView(voice,new LinearLayout.LayoutParams(0,-2,1));root.addView(actions);date.setOnClickListener(v->pickDate());voice.setOnClickListener(v->voice());
+    TextView h=label("Create a note",20);h.setPadding(0,20,0,8);root.addView(h);input=new EditText(this);input.setHint("What do you want to remember?");input.setMinLines(2);root.addView(input);
+    Button time=btn("Choose reminder date & time");root.addView(time);timeLabel=label("No reminder selected",13);root.addView(timeLabel);time.setOnClickListener(v->pickTime());
+    LinearLayout types=new LinearLayout(this);Button once=btn("One time"),hab=btn("Daily habit");types.addView(once,new LinearLayout.LayoutParams(0,-2,1));types.addView(hab,new LinearLayout.LayoutParams(0,-2,1));root.addView(types);repeatLabel=label("One-time reminder",13);root.addView(repeatLabel);
+    once.setOnClickListener(v->{daily=false;habit=false;challenge=0;repeatLabel.setText("One-time reminder");});hab.setOnClickListener(v->habitOptions());
+    Button save=btn("Save reminder ✓");root.addView(save);save.setOnClickListener(v->save());TextView heading=label("Your date-wise notes",21);heading.setPadding(0,24,0,8);root.addView(heading);list=new LinearLayout(this);list.setOrientation(1);root.addView(list);setContentView(sc);
+  }
+  void menu(View v){PopupMenu p=new PopupMenu(this,v);for(String s:new String[]{"Search notes","Habit challenges","Voice assistant","All notes"})p.getMenu().add(s);p.setOnMenuItemClickListener(i->{String s=i.getTitle().toString();if(s.equals("Search notes"))search();else if(s.equals("Habit challenges"))habitOptions();else if(s.equals("Voice assistant"))voice();else render();return true;});p.show();}
+  void pickDate(){new DatePickerDialog(this,(d,y,m,day)->{chosen.set(y,m,day);dateLabel.setText("SELECTED DATE · "+DateFormat.getDateInstance(DateFormat.FULL).format(chosen.getTime()));},chosen.get(Calendar.YEAR),chosen.get(Calendar.MONTH),chosen.get(Calendar.DAY_OF_MONTH)).show();}
+  void pickTime(){Calendar now=Calendar.getInstance();new DatePickerDialog(this,(d,y,m,day)->{Calendar x=Calendar.getInstance();x.set(y,m,day);new TimePickerDialog(this,(t,h,min)->{x.set(Calendar.HOUR_OF_DAY,h);x.set(Calendar.MINUTE,min);x.set(Calendar.SECOND,0);alarmTime=x.getTimeInMillis();timeLabel.setText("🔔 "+DateFormat.getDateTimeInstance().format(x.getTime()));},now.get(Calendar.HOUR_OF_DAY),now.get(Calendar.MINUTE),false).show();},now.get(Calendar.YEAR),now.get(Calendar.MONTH),now.get(Calendar.DAY_OF_MONTH)).show();}
+  void habitOptions(){String[] opts={"10 days","30 days","50 days","Custom duration"};new AlertDialog.Builder(this).setTitle("Daily habit challenge").setItems(opts,(d,w)->{habit=true;daily=true;if(w<3)challenge=new int[]{10,30,50}[w];else{EditText e=new EditText(this);e.setInputType(2);e.setHint("Number of days");new AlertDialog.Builder(this).setTitle("Custom duration").setView(e).setPositiveButton("Set",(a,b)->{try{challenge=Integer.parseInt(e.getText().toString());}catch(Exception ex){challenge=30;}setHabit();}).setNegativeButton("Cancel",null).show();return;}setHabit();}).show();}
+  void setHabit(){repeatLabel.setText("🌱 "+challenge+"-day habit · repeats daily");}
+  void voice(){if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},12);return;}try{Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(RecognizerIntent.EXTRA_PROMPT,"Speak your reminder");startActivityForResult(i,13);}catch(Exception e){Toast.makeText(this,"Voice input unavailable",Toast.LENGTH_LONG).show();}}
+  @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(r==13&&c==RESULT_OK&&d!=null){ArrayList<String>a=d.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);if(a!=null&&!a.isEmpty()){input.setText(a.get(0));String z=a.get(0).toLowerCase(Locale.ROOT);if(z.contains("daily")||z.contains("every day")){daily=true;repeatLabel.setText("Repeats daily");}}}}
+  JSONArray load(){try{return new JSONArray(getSharedPreferences(PREF,0).getString(KEY,"[]"));}catch(Exception e){return new JSONArray();}}
+  void save(){String s=input.getText().toString().trim();if(s.isEmpty()){input.setError("Enter a note");return;}if(alarmTime>0&&alarmTime<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future time",Toast.LENGTH_LONG).show();return;}try{JSONArray a=load();int id=(int)(System.currentTimeMillis()&0x7fffffff);JSONObject n=new JSONObject();n.put("id",id);n.put("text",s);n.put("when",alarmTime);n.put("daily",daily);n.put("habit",habit);n.put("challenge",challenge);n.put("created",System.currentTimeMillis());n.put("done",false);a.put(n);getSharedPreferences(PREF,0).edit().putString(KEY,a.toString()).apply();if(alarmTime>0)schedule(id,s,alarmTime,daily);input.setText("");alarmTime=0;daily=false;habit=false;challenge=0;timeLabel.setText("No reminder selected");repeatLabel.setText("One-time reminder");render();Toast.makeText(this,"Saved in MemoBell",Toast.LENGTH_SHORT).show();}catch(Exception e){Toast.makeText(this,"Could not save",Toast.LENGTH_SHORT).show();}}
+  void schedule(int id,String s,long when,boolean repeat){Intent i=new Intent(this,ReminderReceiver.class);i.putExtra("id",id);i.putExtra("text",s);i.putExtra("daily",repeat);PendingIntent pi=PendingIntent.getBroadcast(this,id,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE);if(Build.VERSION.SDK_INT>=31&&am.canScheduleExactAlarms())am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,when,pi);else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,when,pi);}
+  void render(){list.removeAllViews();JSONArray a=load();TreeMap<String,ArrayList<JSONObject>> groups=new TreeMap<>(Collections.reverseOrder());for(int i=0;i<a.length();i++){JSONObject n=a.optJSONObject(i);if(n==null)continue;long w=n.optLong("when",n.optLong("created"));String day=DateFormat.getDateInstance(DateFormat.FULL).format(new Date(w));groups.computeIfAbsent(day,k->new ArrayList<>()).add(n);}if(groups.isEmpty()){list.addView(label("No reminders yet. Add your first note above.",15));return;}for(String day:groups.keySet()){TextView hd=label("📅 "+day,16);hd.setPadding(0,12,0,5);list.addView(hd);for(JSONObject n:groups.get(day)){int id=n.optInt("id");LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setPadding(14,12,14,12);card.setBackgroundColor(-1);list.addView(card);card.addView(label((n.optBoolean("done")?"✓ ":"")+n.optString("text"),17));long w=n.optLong("when");if(w>0)card.addView(label("🔔 "+DateFormat.getDateTimeInstance().format(new Date(w))+(n.optBoolean("daily")?" · Daily":""),13));if(n.optBoolean("habit"))card.addView(label("🌱 "+n.optInt("challenge")+"-day habit challenge",13));LinearLayout row=new LinearLayout(this);Button done=btn(n.optBoolean("done")?"Undo":"Complete"),del=btn("Delete");row.addView(done,new LinearLayout.LayoutParams(0,-2,1));row.addView(del,new LinearLayout.LayoutParams(0,-2,1));card.addView(row);done.setOnClickListener(v->markDone(id));del.setOnClickListener(v->delete(id));}}}
+  void markDone(int id){try{JSONArray a=load();for(int i=0;i<a.length();i++){JSONObject n=a.optJSONObject(i);if(n!=null&&n.optInt("id")==id)n.put("done",!n.optBoolean("done"));}getSharedPreferences(PREF,0).edit().putString(KEY,a.toString()).apply();render();}catch(Exception ignored){}}
+  void delete(int id){JSONArray a=load(),b=new JSONArray();for(int i=0;i<a.length();i++){JSONObject n=a.optJSONObject(i);if(n!=null&&n.optInt("id")!=id)b.put(n);}getSharedPreferences(PREF,0).edit().putString(KEY,b.toString()).apply();Intent i=new Intent(this,ReminderReceiver.class);PendingIntent pi=PendingIntent.getBroadcast(this,id,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);((AlarmManager)getSystemService(ALARM_SERVICE)).cancel(pi);render();}
+  void search(){EditText e=new EditText(this);e.setHint("Search notes");new AlertDialog.Builder(this).setTitle("Search notes").setView(e).setPositiveButton("Search",(d,w)->{String q=e.getText().toString().toLowerCase();list.removeAllViews();JSONArray a=load();for(int i=0;i<a.length();i++){JSONObject n=a.optJSONObject(i);if(n!=null&&n.optString("text").toLowerCase().contains(q))list.addView(label("• "+n.optString("text"),16));}}).setNegativeButton("Cancel",null).show();}
 }
