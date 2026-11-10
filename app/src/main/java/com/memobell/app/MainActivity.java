@@ -33,6 +33,21 @@ public class MainActivity extends Activity {
     Button save=btn("Save reminder ✓");root.addView(save);save.setOnClickListener(v->save());TextView heading=label("Your date-wise notes",21);heading.setPadding(0,24,0,8);root.addView(heading);list=new LinearLayout(this);list.setOrientation(1);root.addView(list);setContentView(sc);
   }
   void menu(View v){PopupMenu p=new PopupMenu(this,v);for(String s:new String[]{"Search notes","Habit challenges","Voice assistant","All notes"})p.getMenu().add(s);p.setOnMenuItemClickListener(i->{String s=i.getTitle().toString();if(s.equals("Search notes"))search();else if(s.equals("Habit challenges"))habitOptions();else if(s.equals("Voice assistant"))voice();else render();return true;});p.show();}
+
+  void wakeWordSettings(){
+    android.content.SharedPreferences prefs=getSharedPreferences(PREF,0);
+    Switch sw=new Switch(this);sw.setText("Enable “Hey MemoBell”");sw.setTextSize(17);sw.setPadding(24,22,24,22);
+    sw.setChecked(prefs.getBoolean("wake_word_enabled",false));
+    LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.addView(sw);
+    TextView info=label("When enabled, MemoBell is intended to listen for its wake phrase in the background. This needs a compatible on-device wake-word engine and microphone foreground-service setup. The setting is saved here, but background listening is not active in this build yet.",13);
+    info.setPadding(24,8,24,18);box.addView(info);
+    new AlertDialog.Builder(this).setTitle("Hands-free voice activation").setView(box)
+      .setPositiveButton("Save",(d,w)->{
+        boolean enabled=sw.isChecked();
+        prefs.edit().putBoolean("wake_word_enabled",enabled).apply();
+        Toast.makeText(this,enabled?"Wake-word preference saved. Engine setup is still required.":"Hands-free wake word turned off.",Toast.LENGTH_LONG).show();
+      }).setNegativeButton("Cancel",null).show();
+  }
   void pickDate(){new DatePickerDialog(this,(d,y,m,day)->{chosen.set(y,m,day);dateLabel.setText("SELECTED DATE · "+DateFormat.getDateInstance(DateFormat.FULL).format(chosen.getTime()));},chosen.get(Calendar.YEAR),chosen.get(Calendar.MONTH),chosen.get(Calendar.DAY_OF_MONTH)).show();}
   void pickTime(){Calendar now=Calendar.getInstance();new DatePickerDialog(this,(d,y,m,day)->{Calendar x=Calendar.getInstance();x.set(y,m,day);new TimePickerDialog(this,(t,h,min)->{x.set(Calendar.HOUR_OF_DAY,h);x.set(Calendar.MINUTE,min);x.set(Calendar.SECOND,0);alarmTime=x.getTimeInMillis();timeLabel.setText("🔔 "+DateFormat.getDateTimeInstance().format(x.getTime()));},now.get(Calendar.HOUR_OF_DAY),now.get(Calendar.MINUTE),false).show();},now.get(Calendar.YEAR),now.get(Calendar.MONTH),now.get(Calendar.DAY_OF_MONTH)).show();}
   void habitOptions(){String[] opts={"10 days","30 days","50 days","Custom duration"};new AlertDialog.Builder(this).setTitle("Daily habit challenge").setItems(opts,(d,w)->{habit=true;daily=true;if(w<3)challenge=new int[]{10,30,50}[w];else{EditText e=new EditText(this);e.setInputType(2);e.setHint("Number of days");new AlertDialog.Builder(this).setTitle("Custom duration").setView(e).setPositiveButton("Set",(a,b)->{try{challenge=Integer.parseInt(e.getText().toString());}catch(Exception ex){challenge=30;}setHabit();}).setNegativeButton("Cancel",null).show();return;}setHabit();}).show();}
